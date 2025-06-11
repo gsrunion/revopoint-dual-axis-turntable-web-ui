@@ -1,0 +1,282 @@
+<script>
+  let device;
+  let characteristic;
+
+async function connect() {
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [
+        { name: 'REVO_DUAL_AXIS_TABLE' },
+        { services: ['0000ffe0-0000-1000-8000-00805f9b34fb'] } // Correct service UUID
+      ]
+    });
+
+    const server = await device.gatt.connect();
+    console.log('Connected to GATT server.');
+
+    const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+    characteristic = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb'); // Correct characteristic UUID
+
+    if (characteristic) {
+      console.log('Characteristic ready:', characteristic);
+      alert('Connected to the device successfully.');
+    } else {
+      throw new Error('Failed to retrieve the characteristic.');
+    }
+  } catch (error) {
+    console.error('Connection failed:', error);
+    alert(`Connection failed: ${error.message}`);
+  }
+}
+
+  async function disconnect() {
+    try {
+      if (device && device.gatt.connected) {
+        device.gatt.disconnect();
+        console.log('Device disconnected successfully.');
+        alert('Disconnected from device.');
+      } else {
+        console.warn('No active connection to disconnect.');
+        alert('Device already disconnected.');
+      }
+    } catch (error) {
+      console.error('Error during disconnect:', error);
+      alert(`Failed to disconnect: ${error.message}`);
+    }
+  }  
+
+async function sendCommand(command, shouldReadResponse = false) {
+  if (!characteristic) {
+    console.error('Characteristic is unavailable.');
+    alert('You must connect to the robot before sending commands.');
+    return;
+  }
+  try {
+    const formattedCommand = `+${command};`;
+    const commandData = new TextEncoder().encode(formattedCommand);
+
+    await characteristic.writeValue(commandData);
+    console.log(`Command sent: ${formattedCommand}`);
+
+    // Read and decode the response
+    const response = await characteristic.readValue();
+    const decoder = new TextDecoder('utf-8');
+    const decodedResponse = decoder.decode(response).trim();
+
+    console.log(`Response received: ${decodedResponse}`);
+
+    // Check for valid response formats
+    if (decodedResponse.startsWith('+OK')) {
+      console.log('Acknowledgment received: +OK');
+      return; // No data to return for simple acknowledgment
+    } else if (decodedResponse.startsWith('+DATA=')) {
+      // Extract data payload
+      const data = decodedResponse.slice(6).trim(); // Remove '+DATA=' prefix, keep rest
+      console.log('Data payload extracted:', data);
+      return data; // Return the data for query commands
+    } else {
+      console.error('Invalid response:', decodedResponse);
+      throw new Error(`Unexpected response: ${decodedResponse}`);
+    }
+  } catch (error) {
+    console.error('Error during command or validation:', error);
+    alert(`Failed to execute command: ${error.message}`);
+  }
+}
+
+  // Tilt Commands
+  async function setTiltValue(degrees) {
+  if (degrees < -30 || degrees > 30) {
+    alert('Tilt value must be between -30 and 30 degrees.');
+    return;
+  }
+
+  await sendCommand(`CR,TILTVALUE=${degrees}`);
+  console.log(`Tilt command issued for ${degrees} degrees.`);
+
+  // Hardcoded delay (5 seconds) to simulate wait for tilt completion
+  console.log('Waiting for tilt operation to complete (5 seconds)...');
+  await new Promise(resolve => setTimeout(resolve, 5000));
+  console.log('Tilt operation complete.');
+}
+
+  async function zeroTilt() {
+    await sendCommand('CR,TOZERO');
+  }
+
+  async function stopTilt() {
+    await sendCommand('CR,STOP');
+  }
+
+  // Rotation Commands
+   async function waitForRotationToStop() {
+     const pollingInterval = 500; // 0.5 seconds
+     const maxWaitTime = 10000; // 10 seconds
+     const startTime = Date.now();
+
+     while (true) {
+       const turnData = await sendCommand('QT,CHANGEANGLE', true);
+       if (turnData) {
+         const [currentAngle] = turnData.split(',').map(value => parseFloat(value));
+         console.log(`Current turn angle: ${currentAngle}`);
+
+         if (Math.abs(currentAngle) < 0.1) break; // Stop polling
+       }
+
+       // Check if timeout reached
+       if (Date.now() - startTime > maxWaitTime) {
+         console.warn('Polling timed out. Rotation may still be ongoing.');
+         break; // Exit if we exceed max wait time
+       }
+
+       await new Promise(resolve => setTimeout(resolve, pollingInterval));
+     }
+   }
+
+  async function setTurnAngle(degrees) {
+    // Incremental degrees: positive or negative values
+    await sendCommand(`CT,TURNANGLE=${degrees}`);
+    console.log(`Turn command issued for ${degrees} degrees.`);
+
+    // Poll until rotation stops
+    console.log('Waiting for rotation to complete...');
+    await waitForRotationToStop();
+    console.log('Rotation complete.');    
+  }
+
+  // Function to update the speed display when slider moves
+  function updateSpeedDisplay(slider) {
+    const value = parseFloat(slider.value).toFixed(1); // Format value to one decimal place
+    document.getElementById('speedDisplay').textContent = value; // Update the display span
+  }
+
+  // Updated setTurnSpeed function to listen to slider changes
+  async function setTurnSpeed(speed) {
+    speed = parseFloat(speed);
+    if (speed > 35.64 || speed < 10) {
+      alert('Turn speed must be between 10 and 35.64.');
+      return;
+    }
+    console.log(`Setting turn speed to: ${speed}`);
+    await sendCommand(`CT,TURNSPEED=${speed}`);
+  }
+
+  async function zeroRotation() {
+    await sendCommand('CT,TOZERO');
+  }
+
+  async function stopRotation() {
+    await sendCommand('CT,STOP');
+  }
+
+  async function queryTurnAngle() {
+    const turnAngle = await sendCommand('QT,CHANGEANGLE', true);
+    if (turnAngle) {
+      alert(`Current Turn Angle: ${turnAngle}`);
+    }
+  }
+
+async function setTiltValue(degrees) {
+  if (degrees < -30 || degrees > 30) {
+    alert('Tilt value must be between -30 and 30 degrees.');
+    return;
+  }
+
+  await sendCommand(`CR,TILTVALUE=${degrees}`);
+  console.log(`Tilt command issued for ${degrees} degrees.`);
+
+  // Hardcoded delay (5 seconds) to simulate wait for tilt completion
+  console.log('Waiting for tilt operation to complete (5 seconds)...');
+  await new Promise(resolve => setTimeout(resolve, 5000));
+  console.log('Tilt operation complete.');
+}
+
+  async function executeScript(file) {
+    try {
+      const text = await file.text();
+      const commands = text.split('\n'); // Split file content into lines
+
+      for (let line of commands) {
+        line = line.trim();
+        if (!line) continue; // Skip empty lines
+
+        const [action, value] = line.split(' '); // Split the action and value
+        const degrees = parseFloat(value);
+
+        if (action === 'turn') {
+          console.log(`Executing turn command: ${degrees} degrees.`);
+          await setTurnAngle(degrees);
+        } else if (action === 'tilt') {
+          console.log(`Executing tilt command: ${degrees} degrees.`);
+          await setTiltValue(degrees);
+        } else {
+          console.warn(`Unknown action in script: ${action}`);
+        }
+      }
+
+      alert('Script execution complete.');
+    } catch (error) {
+      console.error('Failed to execute script:', error);
+      alert(`Failed to execute script: ${error.message}`);
+    }
+  }
+
+    function calculatePhysicalSpeed(speed) {
+    // Map slider values (17.82 to 35.64) to physical speeds (90 to 18 seconds/rotation)
+    const minSpeed = 17.82; // Minimum turn speed
+    const maxSpeed = 35.64; // Maximum turn speed
+    const minPhysicalSpeed = 90; // Maximum seconds/rotation (higher physical speed value = slower rotation)
+    const maxPhysicalSpeed = 18; // Minimum seconds/rotation (lower physical speed value = faster rotation)
+
+    // Perform linear interpolation to map slider value to physical speed
+    const normalized = (speed - minSpeed) / (maxSpeed - minSpeed);
+    const physicalSpeed = minPhysicalSpeed + normalized * (maxPhysicalSpeed - minPhysicalSpeed);
+    return physicalSpeed.toFixed(2); // Return value rounded to 2 decimal places
+  }
+
+  function updateSpeedDisplay(slider) {
+    const value = parseFloat(slider.value).toFixed(2); // Format speed to 2 decimals
+    const physicalSpeed = calculatePhysicalSpeed(value); // Convert speed to seconds/rotation
+    document.getElementById('sliderValue').textContent = value; // Update speed value
+    document.getElementById('physicalSpeed').textContent = physicalSpeed; // Update physical speed
+  }  
+</script>
+
+<main>
+  <h1>Bluetooth Rotary Controller</h1>
+
+  <!-- Connection Section -->
+  <section>
+    <h2>Connection</h2>
+    <button onclick="connect()">Connect</button>
+    <button onclick="disconnect()">Disconnect</button>
+  </section>
+
+  <!-- Tilt Commands Section -->
+  <section>
+    <h2>Tilt Commands</h2>
+    <button onclick="setTiltValue(prompt('Enter tilt value (between -30 and 30):'))">Set Tilt Value</button>
+    <button onclick="zeroTilt()">Zero Tilt</button>
+    <button onclick="stopTilt()">Stop Tilt</button>
+  </section>
+
+  <!-- Rotation Commands Section -->
+  <section>
+    <h2>Rotation Commands</h2>
+    <button onclick="setTurnAngle(prompt('Enter turn angle (positive or negative for clockwise or counterclockwise):'))">Set Turn Angle</button>
+    <button onclick="zeroRotation()">Zero Rotation</button>
+    <button onclick="stopRotation()">Stop Rotation</button>
+    <label for="turnSpeed">Set Turn Speed (17.82 to 35.64):</label>
+    <input type="range" id="turnSpeed" min="17.82" max="35.64" step="0.1" value="17.82"
+      oninput="updateSpeedDisplay(this)" onchange="setTurnSpeed(this.value)">
+    <div>
+      <span>Speed Value:</span>
+      <span id="sliderValue">17.82</span> (Physical Speed: <span id="physicalSpeed">90</span>s/rotation)
+    </div>
+  </section>
+
+    <section>
+    <h2>Upload Script</h2>
+    <input type="file" accept=".txt" onchange="executeScript(this.files[0])">
+  </section>
+</main>
