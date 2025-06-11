@@ -3,6 +3,5 @@ A single html file front end for controlling the revopoint dual axis turntable o
 
 Inspired By:
 
-https://github.com/gsrunion/revopoint-dual-axis-turntable-web-ui.git
 https://github.com/eXplOiD1/Revopoint-Dual-Axis-Turntable-webbased-Controller
 https://github.com/SphaeroX/Revopoint-Dual-Axis-Turntable
